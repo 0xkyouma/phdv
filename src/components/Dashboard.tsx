@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Switch } from "@/components/ui/switch"
 import { Activity, Brain, Heart, Moon, TrendingUp, Zap, Coins, Share2, AlertCircle, Download, FileText, Calendar, CheckCircle, Clock, Sparkles, ChevronDown, ChevronUp } from "lucide-react"
 import { DataUploadDialog } from "@/components/data-upload-dialog"
@@ -24,32 +24,33 @@ export default function Dashboard() {
   };
 
   // Fetch dashboard data
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!address) {
-        setLoading(false);
-        return;
+  const fetchDashboardData = useCallback(async () => {
+    if (!address) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/dashboard?walletAddress=${address}`);
+      const data: DashboardResponse = await response.json();
+
+      if (data.success) {
+        setDashboardData(data);
+      } else {
+        console.error('Dashboard API error:', data.error);
       }
-
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/dashboard?walletAddress=${address}`);
-        const data: DashboardResponse = await response.json();
-
-        if (data.success) {
-          setDashboardData(data);
-        } else {
-          console.error('Dashboard API error:', data.error);
-        }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [address]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   return (
     <div className="min-h-screen text-white px-8 md:px-20 lg:px-40 pt-24 pb-20">
@@ -59,7 +60,7 @@ export default function Dashboard() {
           <p className="text-gray-400">Your personal health insights and data vault</p>
         </div>
         <div className="flex items-center space-x-4">
-          <DataUploadDialog />
+          <DataUploadDialog onAnalysisComplete={fetchDashboardData} />
           <div className="text-right border border-cyan-400/50 rounded-full px-4 py-1">
             <p className="text-gray-400 text-xs">Token Balance</p>
             <p className="text-lg font-bold">

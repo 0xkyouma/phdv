@@ -51,7 +51,11 @@ const uploadTypes = [
   },
 ]
 
-export function DataUploadDialog() {
+interface DataUploadDialogProps {
+  onAnalysisComplete?: () => void;
+}
+
+export function DataUploadDialog({ onAnalysisComplete }: DataUploadDialogProps = {}) {
   const { address } = useAccount()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -104,6 +108,11 @@ export function DataUploadDialog() {
         setShowResults(true)
         setTokenAnimation(true)
         setTimeout(() => setTokenAnimation(false), 2000)
+
+        // Trigger callback to refresh dashboard data
+        if (onAnalysisComplete) {
+          onAnalysisComplete()
+        }
       } else {
         setError(result.error || "Analysis failed")
       }
@@ -486,7 +495,13 @@ export function DataUploadDialog() {
                     Upload Another
                   </button>
                   <button
-                    onClick={() => setIsOpen(false)}
+                    onClick={() => {
+                      setIsOpen(false)
+                      // Refresh dashboard when closing after successful analysis
+                      if (onAnalysisComplete) {
+                        onAnalysisComplete()
+                      }
+                    }}
                     className="flex-1 bg-cyan-400 text-white font-medium py-2 px-4 rounded-full hover:bg-cyan-500 transition-colors"
                   >
                     View Dashboard
