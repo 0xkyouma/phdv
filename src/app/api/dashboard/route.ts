@@ -63,23 +63,28 @@ export async function GET(request: Request) {
       (report) => new Date(report.createdAt) >= oneWeekAgo
     ).length;
 
-    // Format reports for response with full analysis data
+    // Format reports for response - JSON format only
+    // The health analysis system now exclusively uses JSON format with enhanced fields:
+    // - title: AI-generated descriptive title
+    // - detailedAnalysis: In-depth analysis (200+ words)
+    // - medicalContext: Educational information (150+ words)
+    // - riskAssessment: Structured risk evaluation
+    // - recommendations: Categorized by Immediate Actions, Lifestyle Modifications, Follow-up Care
     const formattedReports: DashboardReport[] = reports.map((report) => ({
       id: String(report._id),
       fileName: report.fileName,
       fileSize: report.fileSize,
       fileType: report.fileType,
-      format: report.format,
+      format: 'json', // Always JSON - markdown format has been deprecated
       createdAt: report.createdAt instanceof Date
         ? report.createdAt.toISOString()
         : new Date(report.createdAt).toISOString(),
       updatedAt: report.updatedAt instanceof Date
         ? report.updatedAt.toISOString()
         : new Date(report.updatedAt).toISOString(),
-      // Include full analysis data for JSON format
-      analysisData: report.format === 'json' ? report.analysisData : undefined,
-      // Include full markdown for markdown format
-      markdown: report.format === 'markdown' ? report.markdown : undefined,
+      // Include enhanced analysis data with all new fields
+      // Note: Legacy records may have markdown format, but we only expose analysisData
+      analysisData: report.analysisData,
     }));
 
     // Return dashboard data

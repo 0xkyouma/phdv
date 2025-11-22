@@ -7,51 +7,35 @@ import { rewardUserForAnalysis } from '@/lib/services/userService';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-const MARKDOWN_ANALYSIS_PROMPT = `
-Analyze this medical/health document in detail and respond in the following markdown format:
+const HEALTH_DOCUMENT_CHECK_PROMPT = `
+Analyze this document and determine if it is a health/medical document.
 
-# 📋 [Document Title] - [Document Type]
+A health/medical document includes:
+- Lab test results (blood tests, urine tests, etc.)
+- Medical reports (X-ray, MRI, CT scan, ultrasound reports)
+- Doctor's notes or prescriptions
+- Vaccination records
+- Health screening results
+- Medical diagnosis or treatment plans
+- Health monitoring data
+- Medical imaging reports
 
-📅 **Date:** [Document Date]
-🔬 **Lab Results** | ✅ **AI Analysis Complete**
+Respond ONLY with a JSON object in this format:
+{
+  "isHealthDocument": true/false,
+  "confidence": 0-100,
+  "documentType": "Brief description of document type",
+  "reason": "Explanation of why this is or isn't a health document"
+}
 
-## 🤖 AI Summary
-
-*Confidence: [confidence percentage]%*
-
-[2-3 sentence summary about overall health status. Example: "Your metabolic panel shows excellent kidney function with creatinine at 0.9 mg/dL (normal range). Glucose levels at 92 mg/dL indicate good blood sugar control. Electrolytes are well-balanced."]
-
-## 📊 Key Findings
-
-• **Kidney function:** Excellent (eGFR: [value] mL/min)
-• **Blood sugar:** Normal fasting glucose ([value] mg/dL)
-• **Liver enzymes:** Within healthy range
-• **Electrolyte balance:** Optimal
-
-## 💡 AI Recommendations
-
-✓ Continue current lifestyle habits
-✓ Maintain hydration levels
-✓ Schedule next blood test in 6 months
-
----
-
-**Risk Assessment:** 🟢 Low Risk
-
-IMPORTANT:
-- Respond ONLY in markdown format
-- Write ALL content in ENGLISH
-- Use emojis (📋 📅 🔬 ✅🤖 📊 💡 ✓)
-- List key findings with bullet points
-- Indicate risk level (🟢 Low / 🟡 Moderate / 🔴 High)
-- Highlight abnormal values
-- Use professional but clear language
+Be strict: if the document is clearly NOT related to health/medical data, set isHealthDocument to false.
 `;
 
 const JSON_ANALYSIS_PROMPT = `
-Analyze this medical/health document in detail and respond in the following JSON format:
+Analyze this medical/health document in comprehensive detail and respond in the following JSON format:
 
 {
+  "title": "Generate a clear, descriptive title based on document content",
   "documentType": "Document type (Blood Test, Medical Report, X-Ray Report, etc.)",
   "date": "Document date (if available)",
   "patientInfo": {
@@ -67,7 +51,8 @@ Analyze this medical/health document in detail and respond in the following JSON
       "unit": "Unit (mg/dL, g/L, etc.)",
       "referenceRange": "Normal reference range",
       "status": "normal/low/high/critical",
-      "category": "Category (Hemogram, Biochemistry, etc.)"
+      "category": "Category (Hemogram, Biochemistry, etc.)",
+      "clinicalSignificance": "Detailed explanation of what this value means for health (2-3 sentences)"
     }
   ],
   "abnormalValues": [
@@ -76,24 +61,51 @@ Analyze this medical/health document in detail and respond in the following JSON
       "value": "Measured value",
       "expectedRange": "Expected value range",
       "severity": "mild/moderate/severe",
-      "meaning": "Possible meaning and significance of this abnormal value"
+      "meaning": "Detailed explanation of possible meaning and significance (3-4 sentences)",
+      "possibleCauses": ["Cause 1", "Cause 2", "Cause 3"],
+      "recommendedActions": ["Action 1", "Action 2"]
     }
   ],
-  "summary": "Brief summary of overall health status (2-3 sentences)",
+  "summary": "Comprehensive summary of overall health status (4-6 sentences minimum). Include overview of tests, general health assessment, most significant findings, and risk level.",
+  "detailedAnalysis": "In-depth analysis of the health data, including: patterns observed, correlations between parameters, overall health trends, and clinical interpretation. (Minimum 200 words)",
+  "medicalContext": "Educational information about what these tests measure, why they're important, what normal ranges mean, and common causes of abnormalities. (Minimum 150 words)",
   "recommendations": [
-    "Recommendation 1: Areas to monitor",
-    "Recommendation 2: Points to pay attention to",
-    "Recommendation 3: Physician consultation recommendations"
-  ]
+    {
+      "category": "Immediate Actions",
+      "items": ["Detailed recommendation 1 with reasoning", "Detailed recommendation 2 with reasoning"]
+    },
+    {
+      "category": "Lifestyle Modifications",
+      "items": ["Detailed lifestyle advice", "Nutritional recommendations", "Exercise suggestions"]
+    },
+    {
+      "category": "Follow-up Care",
+      "items": ["When to schedule next tests", "Which parameters to monitor", "When to consult physician"]
+    }
+  ],
+  "riskAssessment": {
+    "level": "low/moderate/high",
+    "factors": ["Risk factor 1 with explanation", "Risk factor 2 with explanation"],
+    "followUpRequired": true/false,
+    "followUpTiming": "Recommended timing for next check-up"
+  },
+  "confidence": 85,
+  "disclaimer": "This AI analysis is for informational purposes only and does not replace professional medical advice. Always consult with a qualified healthcare provider for medical decisions."
 }
 
 IMPORTANT:
-- Respond ONLY in JSON format, no additional explanations
+- Respond ONLY in JSON format, no additional explanations or markdown code blocks
 - Write ALL content in ENGLISH
+- Generate a descriptive, specific title based on document content
+- Provide DETAILED explanations (comprehensive analysis, minimum 500 words total across all fields)
 - If information is not available in the document, leave the field empty or null
-- Include medical terms in English
-- Highlight critical values
-- Explain possible causes and significance of abnormal values
+- Include medical terms in English with clear explanations
+- Explain clinical significance for ALL parameters
+- Highlight critical values with detailed reasoning
+- Explain possible causes and significance of abnormal values in detail
+- Group findings by category (hematology, chemistry, etc.)
+- Provide educational medical context
+- Use professional medical language while remaining accessible
 `;
 
 export async function POST(request: Request) {
@@ -101,11 +113,21 @@ export async function POST(request: Request) {
     // Connect to database
     await dbConnect();
 
-    // Get format preference from URL params (default: markdown)
-    const url = new URL(request.url);
-    const format = url.searchParams.get('format') || 'markdown'; // 'markdown' or 'json'
+    // Parse FormData with better error handling
+    let formData;
+    try {
+      formData = await request.formData();
+    } catch (formDataError) {
+      return NextResponse.json<HealthAnalysisResponse>(
+        {
+          success: false,
+          error: 'Invalid request format',
+          details: 'Request body must be sent as multipart/form-data. Please ensure you are sending the file using FormData with the correct Content-Type header.'
+        },
+        { status: 400 }
+      );
+    }
 
-    const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const walletAddress = formData.get('walletAddress') as string | null;
 
@@ -169,12 +191,9 @@ export async function POST(request: Request) {
       },
     });
 
-    // Choose prompt based on format
-    const prompt = format === 'json' ? JSON_ANALYSIS_PROMPT : MARKDOWN_ANALYSIS_PROMPT;
-
-    // Send to Gemini for analysis
-    const result = await model.generateContent([
-      prompt,
+    // STEP 1: Check if document is health-related
+    const checkResult = await model.generateContent([
+      HEALTH_DOCUMENT_CHECK_PROMPT,
       {
         inlineData: {
           data: base64Data,
@@ -183,86 +202,129 @@ export async function POST(request: Request) {
       },
     ]);
 
-    const response = await result.response;
+    const checkResponse = checkResult.response;
+    const checkText = checkResponse.text();
+
+    // Parse health check result
+    let healthCheck;
+    try {
+      const cleanedCheckText = checkText
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+      healthCheck = JSON.parse(cleanedCheckText);
+    } catch (parseError) {
+      // If parsing fails, assume it might be health-related to avoid false negatives
+      healthCheck = {
+        isHealthDocument: true,
+        confidence: 50,
+        documentType: 'Unknown',
+        reason: 'Could not verify document type'
+      };
+    }
+
+    // If not a health document, return appropriate error
+    if (!healthCheck.isHealthDocument) {
+      return NextResponse.json<HealthAnalysisResponse>(
+        {
+          success: false,
+          error: 'This document is not health-related',
+          details: `Document Analysis:
+
+Type: ${healthCheck.documentType}
+Confidence: ${healthCheck.confidence}%
+
+Reason: ${healthCheck.reason}
+
+This system is designed exclusively for analyzing medical and health-related documents such as:
+• Laboratory test results (blood tests, urine analysis, etc.)
+• Medical imaging reports (X-ray, MRI, CT scan, ultrasound)
+• Doctor's medical reports and prescriptions
+• Vaccination records and immunization certificates
+• Health screening and check-up results
+• Medical diagnosis and treatment plans
+• Chronic disease monitoring reports
+• Medical examination findings
+
+The uploaded document does not appear to contain medical or health data. Please upload a valid health document for analysis.
+
+If you believe this is a medical document, please ensure:
+1. The document is clearly readable and not corrupted
+2. Medical terminology and test results are visible
+3. The document format is supported (PDF, images, DOC, DOCX)
+
+For accurate health analysis, please provide documents from:
+- Hospitals and medical laboratories
+- Licensed healthcare providers
+- Certified medical diagnostic centers
+- Official health institutions`
+        },
+        { status: 400 }
+      );
+    }
+
+    // STEP 2: If health document confirmed, proceed with detailed analysis
+    // Send to Gemini for JSON analysis
+    const result = await model.generateContent([
+      JSON_ANALYSIS_PROMPT,
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: file.type,
+        },
+      },
+    ]);
+
+    const response = result.response;
     const analysisText = response.text();
 
-    // Handle response based on format
-    if (format === 'markdown') {
-      // Save to database
-      const savedAnalysis = await HealthAnalysis.create({
-        walletAddress,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        format: 'markdown',
-        markdown: analysisText,
-      });
+    // Parse JSON response
+    let parsedAnalysis;
+    try {
+      // Remove markdown code blocks if present
+      const cleanedText = analysisText
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
 
-      // Reward user with tokens
-      const tokenReward = await rewardUserForAnalysis(walletAddress);
-
-      // Return markdown directly
-      return NextResponse.json<HealthAnalysisResponse>({
-        success: true,
-        markdown: analysisText,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        tokenReward: {
-          earned: tokenReward.earnedTokens,
-          total: tokenReward.totalTokens,
-          isNewUser: tokenReward.isNewUser,
+      parsedAnalysis = JSON.parse(cleanedText);
+    } catch (parseError) {
+      // If JSON parsing fails, return error with raw text
+      return NextResponse.json<HealthAnalysisResponse>(
+        {
+          success: false,
+          error: 'Failed to parse AI analysis',
+          details: `The AI returned an invalid response format. Raw response: ${analysisText.substring(0, 500)}...`
         },
-      });
-    } else {
-      // Try to parse JSON response
-      let parsedAnalysis;
-      try {
-        // Remove markdown code blocks if present
-        const cleanedText = analysisText
-          .replace(/```json\n?/g, '')
-          .replace(/```\n?/g, '')
-          .trim();
-
-        parsedAnalysis = JSON.parse(cleanedText);
-      } catch (parseError) {
-        // If JSON parsing fails, return raw text
-        parsedAnalysis = {
-          documentType: 'Analiz Edilen Belge',
-          summary: analysisText,
-          rawAnalysis: analysisText,
-          findings: [],
-          abnormalValues: [],
-          recommendations: ['Ham analiz metnini inceleyiniz.']
-        };
-      }
-
-      // Save to database
-      const savedAnalysis = await HealthAnalysis.create({
-        walletAddress,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        format: 'json',
-        analysisData: parsedAnalysis,
-      });
-
-      // Reward user with tokens
-      const tokenReward = await rewardUserForAnalysis(walletAddress);
-
-      return NextResponse.json<HealthAnalysisResponse>({
-        success: true,
-        analysis: parsedAnalysis,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        tokenReward: {
-          earned: tokenReward.earnedTokens,
-          total: tokenReward.totalTokens,
-          isNewUser: tokenReward.isNewUser,
-        },
-      });
+        { status: 500 }
+      );
     }
+
+    // Save to database
+    await HealthAnalysis.create({
+      walletAddress,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      format: 'json',
+      analysisData: parsedAnalysis,
+    });
+
+    // Reward user with tokens
+    const tokenReward = await rewardUserForAnalysis(walletAddress);
+
+    return NextResponse.json<HealthAnalysisResponse>({
+      success: true,
+      analysis: parsedAnalysis,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      tokenReward: {
+        earned: tokenReward.earnedTokens,
+        total: tokenReward.totalTokens,
+        isNewUser: tokenReward.isNewUser,
+      },
+    });
 
   } catch (error: any) {
     console.error('Health analysis error:', error);
@@ -296,8 +358,9 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({
     status: 'ready',
-    message: 'Health analysis API is ready',
-    supportedFormats: ALLOWED_FILE_TYPES,
+    message: 'Health analysis API is ready (JSON format only)',
+    supportedFileTypes: ALLOWED_FILE_TYPES,
     maxFileSize: `${MAX_FILE_SIZE / 1024 / 1024}MB`,
+    responseFormat: 'JSON',
   });
 }

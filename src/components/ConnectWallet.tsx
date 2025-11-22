@@ -3,7 +3,6 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Button } from '@/components/ui/button';
 import { ID_OF_CHAIN, NAME_OF_CHAIN } from '@/constants/config';
-import { useSwitchChain } from 'wagmi';
 
 export function ConnectWallet() {
 
@@ -54,9 +53,7 @@ export function ConnectWallet() {
                     <Button
                       type="button"
                       onClick={() => {
-                        console.log('Switching to chain:', ID_OF_CHAIN);
-                        openConnectModal();
-
+                        openChainModal();
                       }}
                       variant="danger"
                       className="rounded-full"

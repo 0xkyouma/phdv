@@ -1,7 +1,6 @@
 export interface HealthAnalysisResponse {
   success: boolean;
   analysis?: HealthAnalysisResult;
-  markdown?: string;
   fileName?: string;
   fileSize?: number;
   fileType?: string;
@@ -15,6 +14,7 @@ export interface HealthAnalysisResponse {
 }
 
 export interface HealthAnalysisResult {
+  title: string; // NEW: AI-generated title
   documentType: string;
   date?: string;
   patientInfo?: {
@@ -25,9 +25,13 @@ export interface HealthAnalysisResult {
   };
   findings: HealthFinding[];
   abnormalValues: AbnormalValue[];
-  summary: string;
-  recommendations: string[];
-  rawAnalysis?: string;
+  summary: string; // Enhanced (4-6 sentences)
+  detailedAnalysis: string; // NEW: In-depth analysis (200+ words)
+  medicalContext: string; // NEW: Educational info (150+ words)
+  recommendations: RecommendationCategory[] | string[]; // Categorized (new) or simple array (legacy)
+  riskAssessment: RiskAssessment; // NEW: Structured risk info
+  confidence: number;
+  disclaimer: string;
 }
 
 export interface HealthFinding {
@@ -37,6 +41,7 @@ export interface HealthFinding {
   referenceRange?: string;
   status: 'normal' | 'low' | 'high' | 'critical';
   category?: string;
+  clinicalSignificance?: string; // NEW: Detailed explanation
 }
 
 export interface AbnormalValue {
@@ -44,7 +49,21 @@ export interface AbnormalValue {
   value: string;
   expectedRange: string;
   severity: 'mild' | 'moderate' | 'severe';
-  meaning?: string;
+  meaning?: string; // Enhanced detail
+  possibleCauses?: string[]; // NEW
+  recommendedActions?: string[]; // NEW
+}
+
+export interface RecommendationCategory {
+  category: 'Immediate Actions' | 'Lifestyle Modifications' | 'Follow-up Care';
+  items: string[];
+}
+
+export interface RiskAssessment {
+  level: 'low' | 'moderate' | 'high';
+  factors: string[];
+  followUpRequired: boolean;
+  followUpTiming?: string;
 }
 
 export const ALLOWED_FILE_TYPES = [
@@ -88,24 +107,10 @@ export interface DashboardReport {
   fileName: string;
   fileSize: number;
   fileType: string;
-  format: 'markdown' | 'json';
+  format: 'json';
   createdAt: string;
   updatedAt: string;
   // Full analysis data for JSON format
-  analysisData?: {
-    documentType?: string;
-    date?: string;
-    patientInfo?: {
-      name?: string;
-      age?: string;
-      gender?: string;
-      id?: string;
-    };
-    findings?: HealthFinding[];
-    abnormalValues?: AbnormalValue[];
-    summary?: string;
-    recommendations?: string[];
-  };
-  // Full markdown content for markdown format
-  markdown?: string;
+  // Using Partial for backward compatibility with older records
+  analysisData?: Partial<HealthAnalysisResult>;
 }
