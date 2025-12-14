@@ -5,7 +5,7 @@ export default function Footer() {
   return (
     <footer className="w-full text-gray-400 mx-auto px-8 md:px-20 lg:px-40 pb-8">
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 border-t border-gray-800 pt-12">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 border-t border-gray-800 pt-12 x">
           <div className="md:col-span-1">
             <Image src="/image/phdv-logo.svg" alt="PHDV-AI Logo" width={80} height={24} />
             <p className="text-sm mt-4">Decentralized personal health data vault, powered by AI and blockchain technology.</p>
